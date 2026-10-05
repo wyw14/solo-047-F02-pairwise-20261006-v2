@@ -1,0 +1,7 @@
+.git
+.claude
+.verification-cache
+data
+*.log
+cableguard
+cableguard.exe
