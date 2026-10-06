@@ -18,14 +18,14 @@ type RampStep struct {
 type RampController struct {
 	actuator    *feed.Actuator
 	repository  *telemetry.Repository
-	window      telemetry.StabilityWindow
+	policy      *telemetry.StabilityPolicy
 	checkpoints *store.Checkpoints
 	now         func() time.Time
 }
 
-func NewRampController(actuator *feed.Actuator, repository *telemetry.Repository, window telemetry.StabilityWindow, checkpoints *store.Checkpoints, now func() time.Time) *RampController {
+func NewRampController(actuator *feed.Actuator, repository *telemetry.Repository, policy *telemetry.StabilityPolicy, checkpoints *store.Checkpoints, now func() time.Time) *RampController {
 	return &RampController{
-		actuator: actuator, repository: repository, window: window, checkpoints: checkpoints, now: now,
+		actuator: actuator, repository: repository, policy: policy, checkpoints: checkpoints, now: now,
 	}
 }
 
@@ -36,13 +36,13 @@ func (c *RampController) ApplyStep(ctx context.Context, repeater *Repeater, step
 	if err := c.actuator.ApplyVoltage(ctx, command); err != nil {
 		return repeater.Snapshot(), err
 	}
-	samples := telemetry.CurrentSamples(c.repository, command.RepeaterID, samplesAfter)
-	result, err := c.window.Evaluate(samples)
+	scope := telemetry.StabilityScope{AssetID: command.RepeaterID, Kind: telemetry.KindCurrent}
+	result, err := c.policy.Evaluate(c.repository, scope, samplesAfter)
 	if err != nil {
 		return repeater.Snapshot(), err
 	}
 	if !result.Stable {
-		return repeater.Snapshot(), fmt.Errorf("current for ramp step %d is not stable", step.Number)
+		return repeater.Snapshot(), fmt.Errorf("current for ramp step %d: %w", step.Number, &telemetry.StabilityError{Result: result})
 	}
 	if err := c.checkpoints.SaveRamp(store.RampCheckpoint{
 		RepeaterID: command.RepeaterID, StableStep: step.Number, UpdatedAt: c.now().UTC(),
